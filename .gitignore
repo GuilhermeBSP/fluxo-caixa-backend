@@ -1,0 +1,27 @@
+# Environment
+.env
+*.env
+
+# Database
+*.db
+*.sqlite3
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Frontend (repo separado)
+frontend/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Contas — Fluxo de Caixa{% endblock %}
+
+{% block content %}
+<div class="section-header mb-4">
+  <div>
+    <h5 class="mb-0 fw-bold" style="letter-spacing:-.02em">Contas</h5>
+    <div class="text-muted" style="font-size:.78rem;margin-top:2px">Gerencie suas contas bancárias e carteiras</div>
+  </div>
+  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalAccount">
+    <i class="bi bi-plus-lg me-1"></i>Nova Conta
+  </button>
+</div>
+
+<div class="row g-3" id="accountsList"></div>
+
+<!-- Modal -->
+<div class="modal fade" id="modalAccount" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Nova Conta</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="formAccount">
+          <div class="mb-3">
+            <label class="form-label">Nome *</label>
+            <input type="text" name="name" class="form-control" required maxlength="100" placeholder="Ex: Nubank, Bradesco...">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Tipo *</label>
+            <select name="type" class="form-select" required>
+              <option value="checking">Conta Corrente</option>
+              <option value="savings">Poupança</option>
+              <option value="cash">Dinheiro / Carteira</option>
+              <option value="credit_card">Cartão de Crédito</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Saldo Inicial (R$)</label>
+            <input type="number" name="balance" class="form-control" step="0.01" value="0">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Descrição</label>
+            <input type="text" name="description" class="form-control" maxlength="255" placeholder="Opcional">
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-primary" onclick="saveAccount()">Salvar</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const fmt = v => "R$ " + v.toLocaleString("pt-BR", {minimumFractionDigits:2});
+
+const TYPE_LABELS = {checking:"Conta Corrente", savings:"Poupança", cash:"Dinheiro / Carteira", credit_card:"Cartão de Crédito"};
+const TYPE_ICONS  = {checking:"bi-bank2", savings:"bi-piggy-bank", cash:"bi-cash-coin", credit_card:"bi-credit-card-2-front"};
+const TYPE_COLORS = {
+  checking:    ["rgba(59,130,246,.15)", "#60a5fa"],
+  savings:     ["rgba(16,185,129,.15)", "#34d399"],
+  cash:        ["rgba(251,191,36,.15)", "#fbbf24"],
+  credit_card: ["rgba(244,63,94,.15)",  "#fb7185"],
+};
+
+async function loadAccounts() {
+  const accounts = await fetch("/api/accounts/").then(r=>r.json());
+  const el = document.getElementById("accountsList");
+  if(!accounts.length) {
+    el.innerHTML = `<div class="col-12"><p class="text-muted" style="font-size:.875rem">Nenhuma conta cadastrada.</p></div>`;
+    return;
+  }
+  el.innerHTML = accounts.map(a => {
+    const [bg, fg] = TYPE_COLORS[a.type] || ["rgba(124,58,237,.15)", "#a78bfa"];
+    return `
+    <div class="col-md-4 col-sm-6">
+      <div class="account-card">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+          <div class="d-flex align-items-center gap-3">
+            <div class="account-icon" style="background:${bg};color:${fg}">
+              <i class="bi ${TYPE_ICONS[a.type] || 'bi-wallet2'}"></i>
+            </div>
+            <div>
+              <div class="fw-semibold" style="font-size:.9rem;letter-spacing:-.01em">${a.name}</div>
+              <div class="text-muted" style="font-size:.74rem">${TYPE_LABELS[a.type] || a.type}</div>
+            </div>
+          </div>
+          <button class="btn btn-sm btn-outline-danger p-1" style="width:28px;height:28px;line-height:1" onclick="deleteAccount(${a.id})">
+            <i class="bi bi-trash" style="font-size:.75rem"></i>
+          </button>
+        </div>
+        ${a.description ? `<div class="text-muted mb-3" style="font-size:.78rem">${a.description}</div>` : ""}
+        <div style="border-top:1px solid var(--border);padding-top:.85rem;margin-top:auto">
+          <div class="stat-label mb-1">Saldo Atual</div>
+          <div class="fw-bold ${a.balance>=0?'amount-income':'amount-expense'}" style="font-size:1.4rem;letter-spacing:-.02em">${fmt(a.balance)}</div>
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+async function saveAccount() {
+  const form = document.getElementById("formAccount");
+  const data = Object.fromEntries(new FormData(form));
+  data.balance = parseFloat(data.balance) || 0;
+  const res = await fetch("/api/accounts/", {
+    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data)
+  });
+  if(res.ok) {
+    bootstrap.Modal.getInstance(document.getElementById("modalAccount")).hide();
+    form.reset();
+    loadAccounts();
+  } else {
+    const err = await res.json();
+    alert("Erro: " + JSON.stringify(err.detail));
+  }
+}
+
+async function deleteAccount(id) {
+  if(!confirm("Excluir esta conta e todas as suas transações?")) return;
+  await fetch(`/api/accounts/${id}`, {method:"DELETE"});
+  loadAccounts();
+}
+
+loadAccounts();
+</script>
+{% endblock %}

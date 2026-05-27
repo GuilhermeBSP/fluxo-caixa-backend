@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Fluxo de Caixa{% endblock %}
+
+{% block content %}
+<div class="section-header mb-4">
+  <div>
+    <h5 class="mb-0 fw-bold" style="letter-spacing:-.03em;font-size:1.1rem">Visão Geral</h5>
+    <div class="text-muted" style="font-size:.77rem;margin-top:3px">Acompanhe suas finanças em tempo real</div>
+  </div>
+  <div class="d-flex gap-2">
+    <select id="selMonth"   class="form-select form-select-sm" style="width:auto"></select>
+    <select id="selYear"    class="form-select form-select-sm" style="width:auto"></select>
+    <select id="selAccount" class="form-select form-select-sm" style="width:auto">
+      <option value="">Todas as contas</option>
+    </select>
+  </div>
+</div>
+
+<!-- Stat cards -->
+<div class="row g-3 mb-4" id="statsRow">
+  <div class="col-md-4">
+    <div class="stat-card income" id="cardIncome">
+      <div class="stat-icon"><i class="bi bi-arrow-up-circle-fill"></i></div>
+      <div class="stat-label">Receitas do Mês</div>
+      <div class="stat-value amount-income" id="statIncome">
+        <span class="skeleton" style="display:inline-block;width:130px;height:26px;border-radius:6px">&nbsp;</span>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="stat-card expense" id="cardExpense">
+      <div class="stat-icon"><i class="bi bi-arrow-down-circle-fill"></i></div>
+      <div class="stat-label">Despesas do Mês</div>
+      <div class="stat-value amount-expense" id="statExpense">
+        <span class="skeleton" style="display:inline-block;width:130px;height:26px;border-radius:6px">&nbsp;</span>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="stat-card balance" id="cardBalance">
+      <div class="stat-icon"><i class="bi bi-wallet2"></i></div>
+      <div class="stat-label">Saldo do Período</div>
+      <div class="stat-value" id="statBalance">
+        <span class="skeleton" style="display:inline-block;width:130px;height:26px;border-radius:6px">&nbsp;</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Charts -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-7">
+    <div class="card p-4 h-100">
+      <div class="section-title mb-3"><i class="bi bi-graph-up"></i> Evolução Mensal</div>
+      <canvas id="chartEvolution"></canvas>
+    </div>
+  </div>
+  <div class="col-lg-3">
+    <div class="card p-4 h-100">
+      <div class="section-title mb-3"><i class="bi bi-pie-chart-fill"></i> Despesas</div>
+      <canvas id="chartExpense"></canvas>
+    </div>
+  </div>
+  <div class="col-lg-2">
+    <div class="card p-4 h-100">
+      <div class="section-title mb-3"><i class="bi bi-bank2"></i> Contas</div>
+      <div id="accountBalances" class="mt-1"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Recent transactions -->
+<div class="card p-4">
+  <div class="section-header mb-3">
+    <div class="section-title"><i class="bi bi-clock-history"></i> Últimas Transações</div>
+    <a href="/transactions" class="btn btn-sm btn-outline-primary">Ver todas <i class="bi bi-arrow-right ms-1"></i></a>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr>
+        <th>Data</th><th>Descrição</th><th>Categoria</th><th>Conta</th><th class="text-end">Valor</th>
+      </tr></thead>
+      <tbody id="recentTx">
+        <tr><td colspan="5">
+          <div class="d-flex flex-column gap-2 py-1">
+            <div class="skeleton" style="height:14px;border-radius:4px"></div>
+            <div class="skeleton" style="height:14px;border-radius:4px;width:80%"></div>
+            <div class="skeleton" style="height:14px;border-radius:4px;width:60%"></div>
+          </div>
+        </td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const MONTHS_FULL = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+const fmt = v => "R$ " + v.toLocaleString("pt-BR", {minimumFractionDigits:2});
+const today = new Date();
+
+const selMonth   = document.getElementById("selMonth");
+const selYear    = document.getElementById("selYear");
+const selAccount = document.getElementById("selAccount");
+
+MONTHS_FULL.forEach((m,i) => {
+  const o = new Option(m, i+1);
+  if(i+1 === today.getMonth()+1) o.selected = true;
+  selMonth.appendChild(o);
+});
+for(let y = today.getFullYear(); y >= today.getFullYear()-5; y--) {
+  const o = new Option(y,y);
+  if(y === today.getFullYear()) o.selected = true;
+  selYear.appendChild(o);
+}
+
+async function loadAccounts() {
+  const data = await fetch("/api/accounts/").then(r=>r.json());
+  data.forEach(a => selAccount.appendChild(new Option(a.name, a.id)));
+}
+
+let chartEvol, chartExp;
+
+async function loadDashboard() {
+  const month = selMonth.value, year = selYear.value, account = selAccount.value;
+  const p = new URLSearchParams({year, month});
+  if(account) p.set("account_id", account);
+
+  const [summary, byCategory, evolution, balances, recentTxs] = await Promise.all([
+    fetch(`/api/reports/summary?${p}`).then(r=>r.json()),
+    fetch(`/api/reports/by-category?${p}`).then(r=>r.json()),
+    fetch(`/api/reports/monthly-evolution?months=6${account?"&account_id="+account:""}`).then(r=>r.json()),
+    fetch("/api/reports/account-balances").then(r=>r.json()),
+    fetch(`/api/transactions/?${p}`).then(r=>r.json()),
+  ]);
+
+  // Animated stat values
+  const elIncome  = document.getElementById("statIncome");
+  const elExpense = document.getElementById("statExpense");
+  const elBalance = document.getElementById("statBalance");
+
+  countUp(elIncome,  summary.total_income);
+  countUp(elExpense, summary.total_expense);
+  countUp(elBalance, summary.balance);
+
+  elBalance.className = "stat-value " + (summary.balance >= 0 ? "amount-income" : "amount-expense");
+
+  // Evolution chart
+  if(chartEvol) chartEvol.destroy();
+  chartEvol = new Chart(document.getElementById("chartEvolution"), {
+    type: "bar",
+    data: {
+      labels: evolution.map(e => e.label),
+      datasets: [
+        {
+          label: "Receitas",
+          data: evolution.map(e=>e.income),
+          backgroundColor: "rgba(16,185,129,.65)",
+          borderRadius: 5, borderSkipped: false,
+        },
+        {
+          label: "Despesas",
+          data: evolution.map(e=>e.expense),
+          backgroundColor: "rgba(244,63,94,.65)",
+          borderRadius: 5, borderSkipped: false,
+        },
+        {
+          label: "Saldo",
+          data: evolution.map(e=>e.balance),
+          type: "line",
+          borderColor: "#a78bfa",
+          backgroundColor: "rgba(124,58,237,.08)",
+          borderWidth: 2,
+          tension: .4, pointRadius: 5,
+          pointBackgroundColor: "#a78bfa",
+          pointBorderColor: "#0e0e1c",
+          pointBorderWidth: 2,
+          fill: true,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      animation: { duration: 1000, easing: 'easeOutQuart' },
+      plugins: { legend: { position: "bottom", labels: { padding: 16 } } },
+      scales: {
+        y: { beginAtZero: false, grid: { color: "rgba(255,255,255,.04)" } },
+        x: { grid: { display: false } }
+      }
+    }
+  });
+
+  // Donut chart
+  if(chartExp) chartExp.destroy();
+  if(byCategory.length) {
+    chartExp = new Chart(document.getElementById("chartExpense"), {
+      type: "doughnut",
+      data: {
+        labels: byCategory.map(c=>c.category),
+        datasets: [{
+          data: byCategory.map(c=>c.total),
+          backgroundColor: byCategory.map(c=>c.color),
+          borderWidth: 2,
+          borderColor: "#0e0e1c",
+          hoverOffset: 6,
+        }]
+      },
+      options: {
+        responsive: true,
+        cutout: "70%",
+        animation: { animateRotate: true, duration: 900 },
+        plugins: { legend: { position: "bottom", labels: { boxWidth: 8, padding: 10, font: { size: 11 } } } }
+      }
+    });
+  }
+
+  // Account balances
+  document.getElementById("accountBalances").innerHTML = balances.map(a => `
+    <div class="d-flex justify-content-between align-items-center py-2 border-bottom" style="font-size:.78rem">
+      <span class="text-muted">${a.name}</span>
+      <span class="fw-semibold ${a.balance>=0?'amount-income':'amount-expense'}" style="font-size:.8rem">${fmt(a.balance)}</span>
+    </div>`).join("");
+
+  // Animated table rows
+  const recent = recentTxs.slice(0,10);
+  const tbody  = document.getElementById("recentTx");
+  tbody.innerHTML = recent.length ? recent.map(tx => `
+    <tr>
+      <td class="text-muted" style="font-size:.76rem;white-space:nowrap">${tx.date}</td>
+      <td style="font-size:.875rem;font-weight:500">${tx.description}</td>
+      <td style="font-size:.78rem">
+        ${tx.category_name
+          ? `<span class="category-dot" style="background:${tx.category_color};box-shadow:0 0 6px ${tx.category_color}88"></span>${tx.category_name}`
+          : '<span class="text-muted">—</span>'}
+      </td>
+      <td class="text-muted" style="font-size:.78rem">${tx.account_name}</td>
+      <td class="text-end fw-bold ${tx.type==='income'?'amount-income':'amount-expense'}" style="white-space:nowrap;font-size:.875rem">
+        ${tx.type==='income'?'+':'−'} ${fmt(tx.amount)}
+      </td>
+    </tr>`).join("")
+    : `<tr><td colspan="5" class="text-center text-muted py-4" style="font-size:.875rem">Nenhuma transação neste período</td></tr>`;
+
+  staggerRows(tbody);
+}
+
+[selMonth, selYear, selAccount].forEach(el => el.addEventListener("change", loadDashboard));
+loadAccounts().then(loadDashboard);
+</script>
+{% endblock %}

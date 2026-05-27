@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Fluxo de Caixa{% endblock %}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="/static/css/style.css" rel="stylesheet">
+</head>
+<body>
+
+<!-- Background orbs -->
+<div class="bg-mesh" aria-hidden="true">
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+</div>
+
+<!-- ── App header ── -->
+<header class="app-header">
+  <a href="/" class="header-brand">
+    <div class="brand-icon"><i class="bi bi-cash-stack"></i></div>
+    <span>Fluxo de Caixa</span>
+  </a>
+  <div class="header-right">
+    <span id="headerDate" class="header-date"></span>
+    <button class="ai-btn" onclick="toggleChat()" title="Assistente IA">
+      <i class="bi bi-robot"></i>
+      <span>IA</span>
+    </button>
+  </div>
+</header>
+
+<!-- ── Navigation cards ── -->
+<nav class="nav-strip">
+  <a href="/" class="nav-card {% if active=='dashboard' %}active{% endif %}">
+    <i class="bi bi-speedometer2"></i>
+    <span>Dashboard</span>
+  </a>
+  <a href="/transactions" class="nav-card {% if active=='transactions' %}active{% endif %}">
+    <i class="bi bi-arrow-left-right"></i>
+    <span>Transações</span>
+  </a>
+  <a href="/recurring" class="nav-card {% if active=='recurring' %}active{% endif %}">
+    <i class="bi bi-arrow-repeat"></i>
+    <span>Recorrentes</span>
+  </a>
+  <a href="/accounts" class="nav-card {% if active=='accounts' %}active{% endif %}">
+    <i class="bi bi-bank2"></i>
+    <span>Contas</span>
+  </a>
+  <a href="/categories" class="nav-card {% if active=='categories' %}active{% endif %}">
+    <i class="bi bi-tags"></i>
+    <span>Categorias</span>
+  </a>
+  <a href="/reports" class="nav-card {% if active=='reports' %}active{% endif %}">
+    <i class="bi bi-bar-chart-line"></i>
+    <span>Relatórios</span>
+  </a>
+</nav>
+
+<!-- ── Page content ── -->
+<main class="page-content">
+  {% block content %}{% endblock %}
+</main>
+
+<!-- AI Chat Panel -->
+<div class="chat-panel" id="chatPanel">
+  <div class="chat-header">
+    <div class="ai-avatar"><i class="bi bi-robot"></i></div>
+    <div class="chat-header-info">
+      <strong>Assistente Financeiro</strong>
+      <small><span class="online-dot"></span>Claude AI · Dados em tempo real</small>
+    </div>
+    <button onclick="toggleChat()"
+            style="background:none;border:none;color:var(--text-muted);font-size:.9rem;cursor:pointer;padding:.25rem .4rem;line-height:1;border-radius:6px;transition:color .15s"
+            onmouseenter="this.style.color='var(--text)'" onmouseleave="this.style.color='var(--text-muted)'">
+      <i class="bi bi-x-lg"></i>
+    </button>
+  </div>
+  <div class="chat-messages" id="chatMessages">
+    <div class="msg bot">
+      <div class="msg-bubble">Olá! Sou seu assistente financeiro com acesso aos seus dados reais. Posso analisar seus gastos, identificar padrões ou sugerir como economizar. Como posso ajudar? 💡</div>
+    </div>
+  </div>
+  <div class="chat-input-row">
+    <textarea class="chat-input" id="chatInput" rows="1"
+              placeholder="Pergunte sobre suas finanças..."
+              onkeydown="handleChatKey(event)"></textarea>
+    <button class="chat-send" id="chatSend" onclick="sendChatMessage()">
+      <i class="bi bi-send-fill"></i>
+    </button>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+// Chart.js dark defaults
+Chart.defaults.color           = '#64748b';
+Chart.defaults.borderColor     = 'rgba(255,255,255,.05)';
+Chart.defaults.font.family     = 'Inter, system-ui, sans-serif';
+Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(6,6,15,.95)';
+Chart.defaults.plugins.tooltip.borderColor     = 'rgba(255,255,255,.1)';
+Chart.defaults.plugins.tooltip.borderWidth     = 1;
+Chart.defaults.plugins.tooltip.padding         = 10;
+Chart.defaults.plugins.tooltip.cornerRadius    = 9;
+Chart.defaults.plugins.legend.labels.usePointStyle      = true;
+Chart.defaults.plugins.legend.labels.pointStyleWidth    = 8;
+
+// Header date
+(function() {
+  const d = new Date();
+  document.getElementById('headerDate').textContent =
+    d.toLocaleDateString('pt-BR', {weekday:'long', day:'numeric', month:'long'});
+})();
+
+// ── Global utilities ──
+window.countUp = function(el, target, duration = 900) {
+  const isNeg = target < 0;
+  const abs   = Math.abs(target);
+  const start = performance.now();
+  const ease  = t => 1 - Math.pow(1 - t, 3);
+  function tick(now) {
+    const p   = Math.min((now - start) / duration, 1);
+    const val = abs * ease(p) * (isNeg ? -1 : 1);
+    const fmt = Math.abs(val).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+    el.textContent = (isNeg ? '−' : '') + 'R$ ' + fmt;
+    if(p < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+};
+
+window.staggerRows = function(tbody, delay = 45) {
+  Array.from(tbody.querySelectorAll('tr')).forEach((tr, i) => {
+    tr.style.opacity = '0';
+    tr.style.transform = 'translateX(-10px)';
+    tr.style.transition = `opacity .32s ease ${i*delay}ms, transform .32s ease ${i*delay}ms`;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      tr.style.opacity = '1';
+      tr.style.transform = 'translateX(0)';
+    }));
+  });
+};
+
+window.animateCards = function(selector, baseDelay = 60) {
+  document.querySelectorAll(selector).forEach((el, i) => {
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(18px)';
+    el.style.transition = `opacity .45s ease ${i*baseDelay}ms, transform .45s ease ${i*baseDelay}ms`;
+    setTimeout(() => { el.style.opacity='1'; el.style.transform='translateY(0)'; }, 30 + i*baseDelay);
+  });
+};
+
+// Ripple effect
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.btn');
+  if(!btn || btn.classList.contains('btn-close')) return;
+  const r = document.createElement('span');
+  r.className = 'ripple';
+  const d = Math.max(btn.offsetWidth, btn.offsetHeight);
+  const rect = btn.getBoundingClientRect();
+  r.style.cssText = `width:${d}px;height:${d}px;left:${e.clientX-rect.left-d/2}px;top:${e.clientY-rect.top-d/2}px`;
+  btn.appendChild(r);
+  setTimeout(() => r.remove(), 600);
+});
+
+// Animate nav cards on load
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.nav-card').forEach((el, i) => {
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(10px) scale(.96)';
+    el.style.transition = `opacity .35s ease ${i*50}ms, transform .35s ease ${i*50}ms`;
+    setTimeout(() => { el.style.opacity='1'; el.style.transform='translateY(0) scale(1)'; }, 80 + i*50);
+  });
+  animateCards('.stat-card', 70);
+  animateCards('.card', 50);
+});
+
+// ── Chat ──
+function toggleChat() {
+  document.getElementById('chatPanel').classList.toggle('open');
+  if(document.getElementById('chatPanel').classList.contains('open'))
+    setTimeout(() => document.getElementById('chatInput').focus(), 100);
+}
+
+function handleChatKey(e) {
+  if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
+}
+
+function appendMsg(role, text) {
+  const box  = document.getElementById('chatMessages');
+  const wrap = document.createElement('div');
+  wrap.className = `msg ${role}`;
+  const bubble = document.createElement('div');
+  bubble.className = 'msg-bubble';
+  bubble.textContent = text;
+  wrap.appendChild(bubble);
+  box.appendChild(wrap);
+  box.scrollTop = box.scrollHeight;
+  return bubble;
+}
+
+function showTyping() {
+  const box  = document.getElementById('chatMessages');
+  const wrap = document.createElement('div');
+  wrap.className = 'msg bot';
+  wrap.id = 'typingMsg';
+  wrap.innerHTML = '<div class="msg-bubble"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
+  box.appendChild(wrap);
+  box.scrollTop = box.scrollHeight;
+}
+
+function removeTyping() {
+  const el = document.getElementById('typingMsg');
+  if(el) el.remove();
+}
+
+async function sendChatMessage() {
+  const input   = document.getElementById('chatInput');
+  const sendBtn = document.getElementById('chatSend');
+  const text    = input.value.trim();
+  if(!text || sendBtn.disabled) return;
+  input.value = '';
+  input.style.height = 'auto';
+  appendMsg('user', text);
+  showTyping();
+  sendBtn.disabled = true;
+  try {
+    const res = await fetch('/api/ai/chat', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({message: text})
+    });
+    removeTyping();
+    const bubble  = appendMsg('bot', '');
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '', full = '';
+    while(true) {
+      const {value, done} = await reader.read();
+      if(done) break;
+      buf += decoder.decode(value, {stream:true});
+      const lines = buf.split('\n'); buf = lines.pop();
+      for(const line of lines) {
+        if(!line.startsWith('data: ')) continue;
+        const raw = line.slice(6);
+        if(raw === '[DONE]') break;
+        try { const p = JSON.parse(raw); if(p.text) { full += p.text; bubble.textContent = full; document.getElementById('chatMessages').scrollTop = 999999; } } catch {}
+      }
+    }
+  } catch {
+    removeTyping();
+    appendMsg('bot', 'Erro ao conectar. Verifique se o .env tem ANTHROPIC_API_KEY.');
+  }
+  sendBtn.disabled = false;
+  input.focus();
+}
+
+document.getElementById('chatInput').addEventListener('input', function() {
+  this.style.height = 'auto';
+  this.style.height = Math.min(this.scrollHeight, 90) + 'px';
+});
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

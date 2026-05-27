@@ -1,0 +1,13 @@
+frontend/
+.env
+.env.example
+*.db
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.gitignore
+*.md
+seed.py
+templates/
+static/

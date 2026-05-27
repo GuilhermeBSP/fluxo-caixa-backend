@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}Recorrentes — Fluxo de Caixa{% endblock %}
+
+{% block content %}
+<div class="section-header mb-4">
+  <div>
+    <h5 class="mb-0 fw-bold" style="letter-spacing:-.02em">Transações Recorrentes</h5>
+    <div class="text-muted" style="font-size:.78rem;margin-top:2px">Automatize lançamentos mensais fixos</div>
+  </div>
+  <div class="d-flex gap-2">
+    <button class="btn btn-outline-secondary" onclick="applyRecurring()">
+      <i class="bi bi-arrow-clockwise me-1"></i>Aplicar este mês
+    </button>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalRec">
+      <i class="bi bi-plus-lg me-1"></i>Nova Recorrência
+    </button>
+  </div>
+</div>
+
+<div class="card p-4">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr>
+        <th>Descrição</th><th>Tipo</th><th>Conta</th><th>Categoria</th><th>Dia</th><th class="text-end">Valor</th><th>Status</th><th></th>
+      </tr></thead>
+      <tbody id="recBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="modalRec" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Nova Recorrência</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="formRec">
+          <div class="mb-3">
+            <label class="form-label">Tipo *</label>
+            <select name="type" class="form-select" required>
+              <option value="income">Receita</option>
+              <option value="expense">Despesa</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Conta *</label>
+            <select name="account_id" id="recAccount" class="form-select" required></select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Categoria</label>
+            <select name="category_id" id="recCategory" class="form-select">
+              <option value="">Sem categoria</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Descrição *</label>
+            <input type="text" name="description" class="form-control" required maxlength="255" placeholder="Ex: Aluguel, Netflix...">
+          </div>
+          <div class="row">
+            <div class="col-6 mb-3">
+              <label class="form-label">Valor (R$) *</label>
+              <input type="number" name="amount" class="form-control" step="0.01" min="0.01" required>
+            </div>
+            <div class="col-6 mb-3">
+              <label class="form-label">Dia do mês *</label>
+              <input type="number" name="day_of_month" class="form-control" min="1" max="31" required placeholder="1–31">
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-primary" onclick="saveRec()">Salvar</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const fmt = v => "R$ " + v.toLocaleString("pt-BR", {minimumFractionDigits:2});
+
+async function loadOptions() {
+  const [accounts, categories] = await Promise.all([
+    fetch("/api/accounts/").then(r=>r.json()),
+    fetch("/api/categories/").then(r=>r.json()),
+  ]);
+  accounts.forEach(a   => document.getElementById("recAccount").appendChild(new Option(a.name, a.id)));
+  categories.forEach(c => document.getElementById("recCategory").appendChild(new Option(c.name, c.id)));
+}
+
+async function loadRecurring() {
+  const recs = await fetch("/api/recurring/").then(r=>r.json());
+  document.getElementById("recBody").innerHTML = recs.length ? recs.map(r => `
+    <tr>
+      <td style="font-size:.875rem">${r.description}</td>
+      <td>
+        <span class="badge rounded-pill ${r.type==='income'?'badge-income':'badge-expense'}" style="font-size:.7rem;padding:.35em .7em">
+          ${r.type==='income'?'Receita':'Despesa'}
+        </span>
+      </td>
+      <td class="text-muted" style="font-size:.8rem">${r.account_name}</td>
+      <td style="font-size:.8rem">${r.category_name || '<span class="text-muted">—</span>'}</td>
+      <td class="text-muted" style="font-size:.8rem">Dia ${r.day_of_month}</td>
+      <td class="text-end fw-semibold ${r.type==='income'?'amount-income':'amount-expense'}" style="white-space:nowrap">${fmt(r.amount)}</td>
+      <td>
+        <span class="badge rounded-pill ${r.active?'badge-active':'badge-inactive'}" style="font-size:.7rem;padding:.35em .7em">
+          ${r.active?'Ativo':'Inativo'}
+        </span>
+      </td>
+      <td>
+        <div class="d-flex gap-1">
+          <button class="btn btn-sm btn-outline-secondary p-1" style="width:28px;height:28px;line-height:1" title="${r.active?'Pausar':'Ativar'}" onclick="toggleRec(${r.id})">
+            <i class="bi ${r.active?'bi-pause-fill':'bi-play-fill'}" style="font-size:.75rem"></i>
+          </button>
+          <button class="btn btn-sm btn-outline-danger p-1" style="width:28px;height:28px;line-height:1" onclick="deleteRec(${r.id})">
+            <i class="bi bi-trash" style="font-size:.75rem"></i>
+          </button>
+        </div>
+      </td>
+    </tr>`).join("")
+    : `<tr><td colspan="8" class="text-center text-muted py-4" style="font-size:.875rem">Nenhuma recorrência cadastrada</td></tr>`;
+}
+
+async function saveRec() {
+  const form = document.getElementById("formRec");
+  const data = Object.fromEntries(new FormData(form));
+  if(!data.category_id) delete data.category_id;
+  data.amount = parseFloat(data.amount);
+  data.day_of_month = parseInt(data.day_of_month);
+  const res = await fetch("/api/recurring/", {
+    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data)
+  });
+  if(res.ok) {
+    bootstrap.Modal.getInstance(document.getElementById("modalRec")).hide();
+    document.getElementById("formRec").reset();
+    loadRecurring();
+  } else {
+    const err = await res.json();
+    alert("Erro: " + JSON.stringify(err.detail));
+  }
+}
+
+async function toggleRec(id) {
+  await fetch(`/api/recurring/${id}/toggle`, {method:"PATCH"});
+  loadRecurring();
+}
+
+async function deleteRec(id) {
+  if(!confirm("Excluir esta recorrência?")) return;
+  await fetch(`/api/recurring/${id}`, {method:"DELETE"});
+  loadRecurring();
+}
+
+async function applyRecurring() {
+  const today = new Date();
+  const res  = await fetch(`/api/recurring/apply?year=${today.getFullYear()}&month=${today.getMonth()+1}`, {method:"POST"});
+  const data = await res.json();
+  alert(`${data.created} transação(ões) gerada(s) com sucesso!`);
+  loadRecurring();
+}
+
+loadOptions().then(loadRecurring);
+</script>
+{% endblock %}

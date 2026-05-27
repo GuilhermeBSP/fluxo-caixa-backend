@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block title %}Relatórios — Fluxo de Caixa{% endblock %}
+
+{% block content %}
+<div class="section-header mb-4">
+  <div>
+    <h5 class="mb-0 fw-bold" style="letter-spacing:-.02em">Relatórios</h5>
+    <div class="text-muted" style="font-size:.78rem;margin-top:2px">Análise detalhada das suas finanças</div>
+  </div>
+  <div class="d-flex gap-2">
+    <select id="selMonth" class="form-select form-select-sm" style="width:auto"></select>
+    <select id="selYear"  class="form-select form-select-sm" style="width:auto"></select>
+    <select id="selAccount" class="form-select form-select-sm" style="width:auto">
+      <option value="">Todas as contas</option>
+    </select>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="stat-card income">
+      <div class="stat-icon"><i class="bi bi-arrow-up-circle-fill"></i></div>
+      <div class="stat-label">Total Receitas</div>
+      <div class="stat-value amount-income" id="rIncome">—</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="stat-card expense">
+      <div class="stat-icon"><i class="bi bi-arrow-down-circle-fill"></i></div>
+      <div class="stat-label">Total Despesas</div>
+      <div class="stat-value amount-expense" id="rExpense">—</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="stat-card balance">
+      <div class="stat-icon"><i class="bi bi-bar-chart-line-fill"></i></div>
+      <div class="stat-label">Resultado</div>
+      <div class="stat-value" id="rBalance">—</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-lg-8">
+    <div class="card p-4">
+      <div class="section-title mb-3"><i class="bi bi-graph-up-arrow"></i> Evolução dos últimos 12 meses</div>
+      <canvas id="chartEvolution"></canvas>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card p-4">
+      <div class="section-title mb-3"><i class="bi bi-pie-chart-fill"></i> Despesas por Categoria</div>
+      <canvas id="chartExp"></canvas>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card p-4">
+      <div class="section-title mb-3"><i class="bi bi-arrow-up-circle"></i> Receitas por Categoria</div>
+      <div id="incomeByCategory"></div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card p-4">
+      <div class="section-title mb-3"><i class="bi bi-arrow-down-circle"></i> Despesas por Categoria</div>
+      <div id="expenseByCategory"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const MONTHS_FULL = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+const fmt = v => "R$ " + v.toLocaleString("pt-BR", {minimumFractionDigits:2});
+const today = new Date();
+
+const selMonth  = document.getElementById("selMonth");
+const selYear   = document.getElementById("selYear");
+const selAccount = document.getElementById("selAccount");
+
+MONTHS_FULL.forEach((m,i) => {
+  let o = new Option(m, i+1);
+  if(i+1 === today.getMonth()+1) o.selected = true;
+  selMonth.appendChild(o);
+});
+for(let y = today.getFullYear(); y >= today.getFullYear()-5; y--) {
+  let o = new Option(y,y);
+  if(y === today.getFullYear()) o.selected = true;
+  selYear.appendChild(o);
+}
+
+async function loadAccounts() {
+  const accounts = await fetch("/api/accounts/").then(r=>r.json());
+  accounts.forEach(a => selAccount.appendChild(new Option(a.name, a.id)));
+}
+
+let chartEvol, chartExp;
+
+async function loadReports() {
+  const month = selMonth.value, year = selYear.value, account = selAccount.value;
+  const p = new URLSearchParams({year, month});
+  if(account) p.set("account_id", account);
+
+  const [summary, byExpCat, byIncCat, evolution] = await Promise.all([
+    fetch(`/api/reports/summary?${p}`).then(r=>r.json()),
+    fetch(`/api/reports/by-category?${p}&type=expense`).then(r=>r.json()),
+    fetch(`/api/reports/by-category?${p}&type=income`).then(r=>r.json()),
+    fetch(`/api/reports/monthly-evolution?months=12${account?"&account_id="+account:""}`).then(r=>r.json()),
+  ]);
+
+  document.getElementById("rIncome").textContent  = fmt(summary.total_income);
+  document.getElementById("rExpense").textContent = fmt(summary.total_expense);
+  const balEl = document.getElementById("rBalance");
+  balEl.textContent = fmt(summary.balance);
+  balEl.className = "stat-value " + (summary.balance>=0?"amount-income":"amount-expense");
+
+  if(chartEvol) chartEvol.destroy();
+  chartEvol = new Chart(document.getElementById("chartEvolution"), {
+    type: "bar",
+    data: {
+      labels: evolution.map(e=>e.label),
+      datasets: [
+        { label:"Receitas",  data:evolution.map(e=>e.income),  backgroundColor:"rgba(16,185,129,.65)",  borderRadius:4, borderSkipped:false },
+        { label:"Despesas",  data:evolution.map(e=>e.expense), backgroundColor:"rgba(244,63,94,.65)",   borderRadius:4, borderSkipped:false },
+        { label:"Saldo",     data:evolution.map(e=>e.balance), type:"line", borderColor:"#a78bfa",
+          backgroundColor:"rgba(124,58,237,.08)", tension:.4, pointRadius:4,
+          pointBackgroundColor:"#a78bfa", fill:true },
+      ]
+    },
+    options:{
+      responsive:true,
+      plugins:{ legend:{ position:"bottom", labels:{ boxWidth:10, padding:16 } } },
+      scales:{
+        y:{ beginAtZero:false, grid:{ color:"rgba(255,255,255,.04)" } },
+        x:{ grid:{ display:false } }
+      }
+    }
+  });
+
+  if(chartExp) chartExp.destroy();
+  if(byExpCat.length) {
+    chartExp = new Chart(document.getElementById("chartExp"), {
+      type:"doughnut",
+      data:{
+        labels: byExpCat.map(c=>c.category),
+        datasets:[{ data:byExpCat.map(c=>c.total), backgroundColor:byExpCat.map(c=>c.color), borderWidth:2, borderColor:"#0f0f1f", hoverOffset:4 }]
+      },
+      options:{ responsive:true, cutout:"68%", plugins:{ legend:{ position:"bottom", labels:{ boxWidth:8, padding:10, font:{size:11} } } } }
+    });
+  }
+
+  const renderBar = (list, total) => list.length
+    ? list.map(c => {
+        const pct = total > 0 ? Math.round((c.total/total)*100) : 0;
+        return `
+        <div class="mb-3">
+          <div class="d-flex justify-content-between align-items-center mb-1" style="font-size:.8rem">
+            <span><span class="category-dot" style="background:${c.color}"></span><span class="text-muted">${c.category}</span></span>
+            <span class="fw-semibold text-muted">${fmt(c.total)} <span style="opacity:.6">(${pct}%)</span></span>
+          </div>
+          <div class="progress" style="height:5px">
+            <div class="progress-bar" style="width:${pct}%;background:${c.color}"></div>
+          </div>
+        </div>`;
+      }).join("")
+    : `<p class="text-muted" style="font-size:.875rem">Sem dados.</p>`;
+
+  document.getElementById("incomeByCategory").innerHTML  = renderBar(byIncCat,  summary.total_income);
+  document.getElementById("expenseByCategory").innerHTML = renderBar(byExpCat, summary.total_expense);
+}
+
+[selMonth, selYear, selAccount].forEach(el => el.addEventListener("change", loadReports));
+loadAccounts().then(loadReports);
+</script>
+{% endblock %}

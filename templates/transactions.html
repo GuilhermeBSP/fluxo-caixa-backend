@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% block title %}Transações — Fluxo de Caixa{% endblock %}
+
+{% block content %}
+<div class="section-header mb-4">
+  <div>
+    <h5 class="mb-0 fw-bold" style="letter-spacing:-.02em">Transações</h5>
+    <div class="text-muted" style="font-size:.78rem;margin-top:2px">Histórico completo de entradas e saídas</div>
+  </div>
+  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalTx">
+    <i class="bi bi-plus-lg me-1"></i>Nova Transação
+  </button>
+</div>
+
+<!-- Filters -->
+<div class="card p-3 mb-3">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-2">
+      <label class="form-label">Tipo</label>
+      <select id="fType" class="form-select form-select-sm">
+        <option value="">Todos</option>
+        <option value="income">Receita</option>
+        <option value="expense">Despesa</option>
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Conta</label>
+      <select id="fAccount" class="form-select form-select-sm"><option value="">Todas</option></select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Categoria</label>
+      <select id="fCategory" class="form-select form-select-sm"><option value="">Todas</option></select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">De</label>
+      <input type="date" id="fStart" class="form-control form-control-sm">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Até</label>
+      <input type="date" id="fEnd" class="form-control form-control-sm">
+    </div>
+    <div class="col-md-2">
+      <button class="btn btn-outline-secondary btn-sm w-100" onclick="loadTransactions()">
+        <i class="bi bi-funnel me-1"></i>Filtrar
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="card p-4">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr>
+        <th>Data</th><th>Descrição</th><th>Categoria</th><th>Conta</th><th>Tipo</th><th class="text-end">Valor</th><th></th>
+      </tr></thead>
+      <tbody id="txBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="modalTx" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Nova Transação</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="formTx">
+          <div class="mb-3">
+            <label class="form-label">Tipo *</label>
+            <select name="type" class="form-select" required>
+              <option value="income">Receita</option>
+              <option value="expense">Despesa</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Conta *</label>
+            <select name="account_id" id="modalAccount" class="form-select" required></select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Categoria</label>
+            <select name="category_id" id="modalCategory" class="form-select">
+              <option value="">Sem categoria</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Descrição *</label>
+            <input type="text" name="description" class="form-control" required maxlength="255" placeholder="Ex: Mercado, Salário...">
+          </div>
+          <div class="row">
+            <div class="col-6 mb-3">
+              <label class="form-label">Valor (R$) *</label>
+              <input type="number" name="amount" class="form-control" step="0.01" min="0.01" required placeholder="0,00">
+            </div>
+            <div class="col-6 mb-3">
+              <label class="form-label">Data *</label>
+              <input type="date" name="date" class="form-control" required>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-primary" onclick="saveTx()">Salvar</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const fmt = v => "R$ " + v.toLocaleString("pt-BR", {minimumFractionDigits:2});
+
+async function loadOptions() {
+  const [accounts, categories] = await Promise.all([
+    fetch("/api/accounts/").then(r=>r.json()),
+    fetch("/api/categories/").then(r=>r.json()),
+  ]);
+  ["fAccount","modalAccount"].forEach(id => {
+    const el = document.getElementById(id);
+    if(!el) return;
+    accounts.forEach(a => { if(!el.querySelector(`option[value='${a.id}']`)) el.appendChild(new Option(a.name, a.id)); });
+  });
+  ["fCategory","modalCategory"].forEach(id => {
+    const el = document.getElementById(id);
+    if(!el) return;
+    categories.forEach(c => { if(!el.querySelector(`option[value='${c.id}']`)) el.appendChild(new Option(c.name, c.id)); });
+  });
+  const dateEl = document.querySelector("#formTx [name='date']");
+  if(dateEl && !dateEl.value) dateEl.value = new Date().toISOString().split("T")[0];
+}
+
+async function loadTransactions() {
+  const p = new URLSearchParams();
+  const type     = document.getElementById("fType").value;
+  const account  = document.getElementById("fAccount").value;
+  const category = document.getElementById("fCategory").value;
+  const start    = document.getElementById("fStart").value;
+  const end      = document.getElementById("fEnd").value;
+  if(type)     p.set("type", type);
+  if(account)  p.set("account_id", account);
+  if(category) p.set("category_id", category);
+  if(start)    p.set("start_date", start);
+  if(end)      p.set("end_date", end);
+
+  const txs = await fetch(`/api/transactions/?${p}`).then(r=>r.json());
+  document.getElementById("txBody").innerHTML = txs.length ? txs.map(tx => `
+    <tr>
+      <td class="text-muted" style="font-size:.78rem;white-space:nowrap">${tx.date}</td>
+      <td style="font-size:.875rem">${tx.description}</td>
+      <td style="font-size:.8rem">
+        ${tx.category_name
+          ? `<span class="category-dot" style="background:${tx.category_color}"></span>${tx.category_name}`
+          : '<span class="text-muted">—</span>'}
+      </td>
+      <td class="text-muted" style="font-size:.8rem">${tx.account_name}</td>
+      <td>
+        <span class="badge rounded-pill ${tx.type==='income'?'badge-income':'badge-expense'}" style="font-size:.7rem;padding:.35em .7em">
+          ${tx.type==='income'?'Receita':'Despesa'}
+        </span>
+      </td>
+      <td class="text-end fw-semibold ${tx.type==='income'?'amount-income':'amount-expense'}" style="white-space:nowrap">
+        ${tx.type==='income'?'+':'−'} ${fmt(tx.amount)}
+      </td>
+      <td>
+        <button class="btn btn-sm btn-outline-danger p-1" style="width:28px;height:28px;line-height:1" onclick="deleteTx(${tx.id})">
+          <i class="bi bi-trash" style="font-size:.75rem"></i>
+        </button>
+      </td>
+    </tr>`).join("")
+    : `<tr><td colspan="7" class="text-center text-muted py-4" style="font-size:.875rem">Nenhuma transação encontrada</td></tr>`;
+}
+
+async function saveTx() {
+  const form = document.getElementById("formTx");
+  const data = Object.fromEntries(new FormData(form));
+  if(!data.category_id) delete data.category_id;
+  data.amount = parseFloat(data.amount);
+  const res = await fetch("/api/transactions/", {
+    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data)
+  });
+  if(res.ok) {
+    bootstrap.Modal.getInstance(document.getElementById("modalTx")).hide();
+    form.reset();
+    document.querySelector("#formTx [name='date']").value = new Date().toISOString().split("T")[0];
+    loadTransactions();
+  } else {
+    const err = await res.json();
+    alert("Erro: " + JSON.stringify(err.detail));
+  }
+}
+
+async function deleteTx(id) {
+  if(!confirm("Remover esta transação?")) return;
+  await fetch(`/api/transactions/${id}`, {method:"DELETE"});
+  loadTransactions();
+}
+
+loadOptions().then(loadTransactions);
+</script>
+{% endblock %}
