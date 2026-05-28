@@ -91,20 +91,23 @@ def chat(req: ChatRequest, db: Session = Depends(get_db)):
     )
 
     def stream():
-        client = OpenAI(api_key=api_key)
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user",   "content": req.message},
-            ],
-            stream=True,
-            max_tokens=1024,
-        )
-        for chunk in response:
-            text = chunk.choices[0].delta.content or ""
-            if text:
-                yield "data: " + json.dumps({"text": text}) + "\n\n"
+        try:
+            client = OpenAI(api_key=api_key)
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user",   "content": req.message},
+                ],
+                stream=True,
+                max_tokens=1024,
+            )
+            for chunk in response:
+                text = chunk.choices[0].delta.content or ""
+                if text:
+                    yield "data: " + json.dumps({"text": text}) + "\n\n"
+        except Exception as e:
+            yield "data: " + json.dumps({"text": f"⚠️ Erro: {str(e)}"}) + "\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(stream(), media_type="text/event-stream")
