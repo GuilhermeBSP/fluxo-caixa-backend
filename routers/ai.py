@@ -9,7 +9,7 @@ from database import get_db
 from models.transaction import Transaction, TransactionType
 from models.account import Account
 from models.category import Category
-from groq import Groq
+from openai import OpenAI
 from datetime import date
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
@@ -73,10 +73,10 @@ def _financial_context(db: Session) -> str:
 
 @router.post("/chat")
 def chat(req: ChatRequest, db: Session = Depends(get_db)):
-    api_key = os.getenv("GROQ_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         def err():
-            yield "data: " + json.dumps({"text": "⚠️ GROQ_API_KEY não configurada. Crie um arquivo .env com sua chave da Groq."}) + "\n\n"
+            yield "data: " + json.dumps({"text": "⚠️ OPENAI_API_KEY não configurada."}) + "\n\n"
             yield "data: [DONE]\n\n"
         return StreamingResponse(err(), media_type="text/event-stream")
 
@@ -91,9 +91,9 @@ def chat(req: ChatRequest, db: Session = Depends(get_db)):
     )
 
     def stream():
-        client = Groq(api_key=api_key)
+        client = OpenAI(api_key=api_key)
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user",   "content": req.message},
