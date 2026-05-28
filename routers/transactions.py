@@ -66,6 +66,38 @@ def create_transaction(data: TransactionCreate, db: Session = Depends(get_db)):
     return TransactionOut(**_enrich(tx))
 
 
+@router.put("/{tx_id}", response_model=TransactionOut)
+def update_transaction(tx_id: int, data: TransactionCreate, db: Session = Depends(get_db)):
+    tx = db.query(Transaction).options(
+        joinedload(Transaction.account),
+        joinedload(Transaction.category),
+    ).filter(Transaction.id == tx_id).first()
+    if not tx:
+        raise HTTPException(status_code=404, detail="Transação não encontrada")
+
+    old_account = db.query(Account).filter(Account.id == tx.account_id).first()
+    new_account = db.query(Account).filter(Account.id == data.account_id).first()
+    if not new_account:
+        raise HTTPException(status_code=404, detail="Conta não encontrada")
+
+    if tx.type == TransactionType.income:
+        old_account.balance -= tx.amount
+    else:
+        old_account.balance += tx.amount
+
+    for key, val in data.model_dump().items():
+        setattr(tx, key, val)
+
+    if tx.type == TransactionType.income:
+        new_account.balance += tx.amount
+    else:
+        new_account.balance -= tx.amount
+
+    db.commit()
+    db.refresh(tx)
+    return TransactionOut(**_enrich(tx))
+
+
 @router.delete("/{tx_id}", status_code=204)
 def delete_transaction(tx_id: int, db: Session = Depends(get_db)):
     tx = db.query(Transaction).options(joinedload(Transaction.account)).filter(Transaction.id == tx_id).first()
